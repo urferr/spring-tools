@@ -1,0 +1,31 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "spring-tools",
+  "version": "2.4.0",
+  "description": "Spring Tools Language Server for Claude Code and Codex: Spring Boot diagnostics and project insights over MCP.",
+  "author": {
+    "name": "Spring Tools"
+  },
+  "homepage": "https://spring.io/tools",
+  "repository": "https://github.com/spring-projects/spring-tools",
+  "extensions": {
+    "com.openai": {
+      "hooks": "./hooks/codex.json",
+      "interface": {
+        "displayName": "Spring Tools",
+        "shortDescription": "Spring Boot diagnostics and project insights.",
+        "longDescription": "Run the standalone Spring Tools Language Server locally to inspect Spring Boot diagnostics, beans, and request mappings. Requires Node.js and Java 21+; downloads the checksum-verified server JAR on first use.",
+        "developerName": "Spring Tools",
+        "category": "Developer Tools",
+        "capabilities": [
+          "Read",
+          "Write"
+        ],
+        "websiteURL": "https://spring.io/tools",
+        "defaultPrompt": [
+          "Check this Spring Boot project for Spring diagnostics."
+        ]
+      }
+    }
+  }
+}

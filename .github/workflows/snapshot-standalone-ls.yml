@@ -52,12 +52,14 @@ jobs:
           # Create or reset a local branch to the current commit (which is what triggered the action)
           git checkout -B claude-snapshot
           
-          # Update the version in plugin.json
-          tmp=$(mktemp)
-          jq --arg v "$version" '.version = $v' claude-plugins/spring-tools/.claude-plugin/plugin.json > "$tmp" && mv "$tmp" claude-plugins/spring-tools/.claude-plugin/plugin.json
+          # Keep the Claude, portable, and Codex manifests on the same server version.
+          for manifest in claude-plugins/spring-tools/{.claude-plugin/plugin.json,plugin.json,.codex-plugin/plugin.json}; do
+            tmp=$(mktemp)
+            jq --arg v "$version" '.version = $v' "$manifest" > "$tmp" && mv "$tmp" "$manifest"
+            git add "$manifest"
+          done
           
-          git add claude-plugins/spring-tools/.claude-plugin/plugin.json
-          git commit -m "Update Claude plugin version to $version"
+          git commit -m "Update Spring Tools plugin version to $version"
           
           # Push to the remote claude-snapshot branch forcefully.
           # If it doesn't exist, this creates it. If it does exist, it completely overwrites it

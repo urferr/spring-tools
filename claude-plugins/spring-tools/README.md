@@ -1,15 +1,16 @@
-# Spring Tools Language Server — Claude Code Plugin
+# Spring Tools Language Server — Claude Code and Codex Plugin
 
-A [Claude Code](https://code.claude.com) plugin that contributes the Spring Tools Language Server, exposing Spring Boot diagnostics, bean/request-mapping lookups, and other project insights to Claude Code via MCP tools.
+A plugin for [Claude Code](https://code.claude.com) and [Codex](https://developers.openai.com/codex), exposing Spring Boot diagnostics, bean/request-mapping lookups, and other project insights via MCP tools.
 
 Unlike the VS Code extension, this plugin uses the **standalone** variant of the language server which operates **without** JDT Language Server. Project classpath is computed directly via Maven and Gradle tooling; type indexing uses Jandex.
 
 ## Requirements
 
 - Java 21+ on `PATH`
+- Node.js on `PATH`
 - Maven or Gradle projects in your workspace
 
-## Usage
+## Claude Code usage
 
 ### 1. Add the Marketplace
 
@@ -79,9 +80,70 @@ We maintain a local marketplace configuration (`claude-plugins/.claude-plugin/ma
    claude plugin install spring-tools@spring-tools-local
    ```
 
+## Codex usage
+
+From this repository's root, register the existing local marketplace and install the plugin:
+
+```bash
+codex plugin marketplace add ./claude-plugins
+codex plugin add spring-tools@spring-tools-local
+```
+
+The server uses `SPRING_TOOLS_WORKSPACE_DIR` as the project root when set; otherwise it uses its startup working directory. Desktop hosts may start the server in the plugin installation directory, so configure the workspace explicitly as described below. The first start downloads the checksum-verified JAR; Maven/Gradle project import can also require network access. To avoid spending the MCP startup timeout downloading the JAR, run `node claude-plugins/spring-tools/install.js` before installing the local plugin (or build it with `update-local-jars.sh`).
+
+The shared skills are `validate`, `quickfix`, and `refresh-workspace`. Project generation is intentionally not included. Ask Codex to validate the project, explain or fix a diagnostic, or refresh the workspace after external changes.
+
+The portable `plugin.json` declares `hooks/codex.json` for Codex. This hook calls `refreshWorkspace` after `apply_patch` (including its `Edit`/`Write` aliases), covering multi-file patches, additions, deletions, and renames without assuming a single `file_path` argument. Claude Code retains its existing hooks.
+
+**Codex 0.155.0 limitation:** Installation and all 22 MCP tools were verified, but this version did not discover hooks declared in the portable manifest. To enable automatic refresh on this version, merge the contents of `hooks/codex.json` into the target project's `.codex/hooks.json` (do not overwrite existing hooks), then enable and review/trust them using `/hooks` in the CLI. This manual hook configuration has not been end-to-end tested. Without it, use the `refresh-workspace` skill after changes; `validate` always refreshes before querying diagnostics, including after shell or external edits.
+
+The launcher, server JAR, explanations, and skills are shared between both hosts. The `.codex-plugin/plugin.json` file supplies compatibility metadata; the portable `mcp.json` supplies the tested MCP connection.
+
+### Direct MCP configuration
+
+To use only the server, or with a Codex version that does not load bundled MCP servers, add this to your Codex `config.toml`, adapting both absolute paths:
+
+```toml
+[mcp_servers.spring-tools-mcp]
+command = "node"
+args = ["D:/path/to/spring-tools/claude-plugins/spring-tools/launcher.js"]
+cwd = "D:/path/to/your-spring-boot-project"
+startup_timeout_sec = 180
+tool_timeout_sec = 120
+```
+
+Use either the bundled MCP server or this direct configuration to avoid starting two servers for the same project. Direct MCP configuration exposes the tools only; it does not install the skills or hooks. For direct usage, call `refreshWorkspace` after disk changes, `getProjectList` to obtain project names, and `getProjectDiagnostics` with the chosen `projectName`.
+
+### Verification and local updates
+
+Verify that the server initializes and exposes `getProjectList`, `getProjectDiagnostics`, `fileChanged`, `fileDeleted`, and `refreshWorkspace`. Check that your project appears in `getProjectList`, request diagnostics, then make a relevant source change and verify the diagnostics update after refresh. General Java compiler errors still require Maven or Gradle checks.
+
+Codex installs a cached copy of local plugins. After editing this source, remove and add the plugin again, then start a new task/session:
+
+```bash
+codex plugin remove spring-tools@spring-tools-local
+codex plugin add spring-tools@spring-tools-local
+```
+
+See the official [plugin packaging](https://developers.openai.com/plugins/build/plugins), [MCP](https://developers.openai.com/codex/mcp), and [hooks](https://developers.openai.com/codex/hooks) documentation.
+
+## Configuring the workspace directory
+
+Set `SPRING_TOOLS_WORKSPACE_DIR` to the absolute path of your project or a workspace containing multiple Maven/Gradle projects. This applies to both Claude Code and Codex and takes precedence over the launcher's working directory. If the variable is unset or empty, the launcher falls back to `process.cwd()`.
+
+For a persistent Windows user setting, run in PowerShell, replacing the example path:
+
+```powershell
+[Environment]::SetEnvironmentVariable('SPRING_TOOLS_WORKSPACE_DIR', 'D:\Projects\workspace', 'User')
+```
+
+Fully exit and restart the host application so its MCP server inherits the new environment. For a CLI launched from the current PowerShell session, also set `$env:SPRING_TOOLS_WORKSPACE_DIR = 'D:\Projects\workspace'` before launching it. The directory is read at server startup; changing it requires a server restart. Verify the selected path in the `Initializing workspace project directory:` entry in `boot-ls.log` beside `launcher.js`.
+
+The standalone server also reads its `.claude/spring-tools.properties` and `.claude/spring-tools.json` settings from this selected root. When using a shared workspace directory, place shared server settings there.
+
 ## Configuring language server preferences
 
-You can customize validation severities and other language server settings on a per-project basis by placing a settings file inside the `.claude/` directory of your project. Two formats are supported and may coexist — the properties file provides the base values and the JSON file overrides them.
+You can customize validation severities and other language server settings on a per-project basis by placing a settings file inside the `.claude/` directory of your project. This shared server configuration path also applies when using Codex. Two formats are supported and may coexist — the properties file provides the base values and the JSON file overrides them.
 
 ### Properties format (`.claude/spring-tools.properties`)
 
@@ -136,7 +198,7 @@ Nested JSON matching the VSCode `boot-java` / `spring-boot` configuration struct
 
 The full list of available categories and problem codes is embedded in the language server JAR as `problem-types.json`. They are the same keys used in the VSCode extension's settings.
 
-Settings are applied once at startup. You must restart the language server (and therefore Claude Code) for changes to take effect.
+Settings are applied once at startup. Restart the language server by starting a new Claude Code or Codex session for changes to take effect.
 
 ## What the language server provides
 
@@ -145,21 +207,26 @@ Via MCP tools:
 - **Diagnostics** — Spring-specific warnings and quick fixes (missing annotations, incorrect bean wiring, etc.), including version validation results
 - **Project insight** — bean, component, and request-mapping lookups; resolved project classpath
 
-Via hooks (`hooks/hooks.json`), the plugin also tracks file and project changes on disk to keep its internal index up to date, and exposes a command to refresh the index manually. These hooks are gated to Java/Kotlin/Groovy source files and build/config files (`.java`, `.kt`, `.kts`, `.groovy`, `.xml`, `.properties`, `.yml`, `.yaml`, `.gradle`) — edits to unrelated files don't trigger them. The workspace-refresh hook fires only on `git` commands.
+Via Claude Code hooks (`hooks/hooks.json`), the plugin also tracks file and project changes on disk to keep its internal index up to date, and exposes a command to refresh the index manually. These hooks are gated to Java/Kotlin/Groovy source files and build/config files (`.java`, `.kt`, `.kts`, `.groovy`, `.xml`, `.properties`, `.yml`, `.yaml`, `.gradle`) — edits to unrelated files don't trigger them. The workspace-refresh hook fires only on `git` commands. For Codex hook behavior and compatibility, see the Codex usage section above.
 
 ## Plugin structure
 
 ```
 spring-tools/
 ├── .claude-plugin/
-│   └── plugin.json          # Plugin manifest (MCP server config)
+│   └── plugin.json          # Claude Code manifest (MCP server config)
+├── .codex-plugin/
+│   └── plugin.json          # Codex compatibility metadata
+├── plugin.json              # Portable manifest and Codex hook declaration
+├── mcp.json                 # Portable MCP server configuration
 ├── launcher.js              # Node.js script that downloads the JAR (if missing) and starts Java
 ├── install.js               # Node.js script that downloads the JAR
 ├── hooks/                   # Hooks that notify the language server of file/project changes
 ├── language-server/         # Populated by install.js on first run (gitignored)
 │   └── spring-boot-language-server-standalone-exec.jar
-├── skills/                  # Claude Code skills
+├── skills/                  # Shared Claude Code and Codex skills
 │   ├── validate/
+│   ├── refresh-workspace/
 │   └── quickfix/
 ├── explanations/            # Markdown files with problem explanations and fixes
 └── README.md
@@ -167,4 +234,4 @@ spring-tools/
 
 ## How it works
 
-Claude Code parses the MCP configuration in `plugin.json` at startup. This triggers `launcher.js`, which checks if the heavy Java JAR is downloaded. If not, it executes `install.js` to download it from Spring's CDN. Then it boots the standalone Spring Tools Language Server, instructing it to expose its MCP tools over `stdio` (the language server's own LSP socket transport is disabled, since nothing in this plugin connects to it).
+Claude Code reads the MCP configuration in `.claude-plugin/plugin.json`; Codex reads the portable `plugin.json` and `mcp.json`. Both start `launcher.js`, which checks if the heavy Java JAR is downloaded. If not, it executes `install.js` to download it from Spring's CDN. Then it boots the standalone Spring Tools Language Server, instructing it to expose its MCP tools over `stdio` (the language server's own LSP socket transport is disabled, since nothing in this plugin connects to it).
