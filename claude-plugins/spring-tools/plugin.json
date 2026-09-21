@@ -10,7 +10,7 @@
   "repository": "https://github.com/spring-projects/spring-tools",
   "extensions": {
     "com.openai": {
-      "hooks": "./hooks/codex.json",
+      "hooks": [],
       "interface": {
         "displayName": "Spring Tools",
         "shortDescription": "Spring Boot diagnostics and project insights.",

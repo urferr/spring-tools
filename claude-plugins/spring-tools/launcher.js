@@ -28,7 +28,7 @@ async function start() {
         "-Dlogging.level.root=INFO",
         "-Dspring.ai.mcp.server.stdio=true",
         "-Dlanguageserver.enabled=false",
-        `-Dspring.boot.ls.project.dir=${process.env.SPRING_TOOLS_WORKSPACE_DIR || process.cwd()}`,
+        `-Dspring.boot.ls.project.dir=${process.cwd()}`,
         "-jar",
         jarPath
     ];
